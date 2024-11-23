@@ -3,7 +3,7 @@
 
 use ark_ff::{FftField, Field, Zero};
 use ark_poly::domain::DomainCoeff;
-use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
+use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
 use ark_std::rand::Rng;
 use ark_std::UniformRand;
 use itertools::{
@@ -14,7 +14,6 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::ops::{Add, Mul, MulAssign};
 
-// TODO: (alex) change to trait alias once stabilized in Rust:
 // `https://doc.rust-lang.org/unstable-book/language-features/trait-alias.html`
 /// A trait bound alias for generalized coefficient type used in
 /// `GeneralDensePolynomial`. Concrete instantiations can be both field or
@@ -43,7 +42,7 @@ pub struct GeneralDensePolynomial<T: GroupCoeff<F>, F: Field> {
     _phantom: PhantomData<F>,
 }
 
-// struct because that trait assume the coeffs are field elements. Therefore, we
+// struct because that trait assumes the coeffs are field elements. Therefore, we
 // need to generalize that trait first which is left for future work or even
 // upstream PR.
 impl<T, F> GeneralDensePolynomial<T, F>
@@ -126,7 +125,7 @@ where
     /// By leveraging FFT algorithms, we have a much lower amortized cost.
     pub fn batch_evaluate_rou(
         &mut self,
-        domain: &Radix2EvaluationDomain<F>,
+        domain: &GeneralEvaluationDomain<F>,
     ) -> Vec<T> {
         assert!(self.coeffs.len() <= domain.size(),
                 "Polynomial with {} num_of_coeffs can't be evaluated on a smaller domain with size {}",
@@ -186,7 +185,6 @@ where
 {
     type Output = Self;
 
-    // TODO: (alex) add `Add<'a Self, Output=Self>` and internally use that instead.
     fn add(self, rhs: Self) -> Self::Output {
         let mut res = if self.is_zero() {
             rhs
@@ -231,6 +229,7 @@ where
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use std::cmp::max;
     use super::*;
     use crate::constant_curve::{G1Projective, ScalarField};
     use ark_ec::{short_weierstrass::SWCurveConfig, CurveGroup};
@@ -307,7 +306,6 @@ pub(crate) mod tests {
         let degrees = [14, 15, 16, 17, 18];
 
         for degree in degrees {
-            // TODO: (alex) change to a higher degree when need to test cutoff point and
             // FFT-based eval on arbitrary points
             let num_points = rng.gen_range(degree - 4..degree + 4); // should allow more points than degree
             let mut f = GeneralDensePolynomial::<Fr, Fr>::rand(degree, &mut rng);
@@ -327,9 +325,11 @@ pub(crate) mod tests {
             );
 
             // Second, test points at roots-of-unity
-            let domain =
-                Radix2EvaluationDomain::new(ark_std::cmp::max(degree + 1, num_points)).unwrap();
+            let domain = GeneralEvaluationDomain::new(
+                max(degree + 1, num_points)
+            ).unwrap();
             let roots = domain.elements();
+
             assert_eq!(
                 f.batch_evaluate_rou(&domain)[..num_points],
                 roots
@@ -337,6 +337,7 @@ pub(crate) mod tests {
                     .map(|x| f.evaluate(&x))
                     .collect::<Vec<_>>()
             );
+
             assert_eq!(
                 g.batch_evaluate_rou(&domain)[..num_points],
                 domain
