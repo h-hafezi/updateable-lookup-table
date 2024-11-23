@@ -1,4 +1,9 @@
 pub mod lagrange_basis;
-mod constant_curve;
-mod util;
-mod poly;
+
+pub mod constant_curve;
+
+pub mod util;
+
+pub mod poly;
+
+pub mod kzg;

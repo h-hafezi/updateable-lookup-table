@@ -4,7 +4,6 @@
 use ark_ff::{FftField, Field, Zero};
 use ark_poly::domain::DomainCoeff;
 use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
-use ark_std::rand::Rng;
 use ark_std::UniformRand;
 use itertools::{
     EitherOrBoth::{Both, Left, Right},
@@ -13,6 +12,7 @@ use itertools::{
 use std::fmt;
 use std::marker::PhantomData;
 use std::ops::{Add, Mul, MulAssign};
+use ark_std::rand::RngCore as Rng;
 
 // `https://doc.rust-lang.org/unstable-book/language-features/trait-alias.html`
 /// A trait bound alias for generalized coefficient type used in
@@ -123,6 +123,7 @@ where
     /// Similar task as [`Self::batch_evaluate()`], except the points are
     /// [roots of unity](https://en.wikipedia.org/wiki/Root_of_unity) of `domain`.
     /// By leveraging FFT algorithms, we have a much lower amortized cost.
+    /// It returns f(w^0), f(w^1), ..., f(w^n)
     pub fn batch_evaluate_rou(
         &mut self,
         domain: &GeneralEvaluationDomain<F>,
@@ -231,11 +232,14 @@ where
 pub(crate) mod tests {
     use std::cmp::max;
     use super::*;
-    use crate::constant_curve::{G1Projective, ScalarField};
+    use crate::constant_curve::{G1Projective, ScalarField, E};
     use ark_ec::{short_weierstrass::SWCurveConfig, CurveGroup};
     use ark_poly::{univariate::DensePolynomial, DenseUVPolynomial, Polynomial};
     use ark_std::iter::successors;
     use ark_std::test_rng;
+    use ark_std::rand::Rng;
+    use crate::kzg::SRS;
+    use crate::lagrange_basis::lagrange_basis::LagrangeSubgroup;
 
     type Fr = ScalarField;
 
@@ -347,5 +351,24 @@ pub(crate) mod tests {
                     .collect::<Vec<_>>()
             );
         }
+    }
+
+    #[test]
+    fn test_fft() {
+        let mut rng = test_rng();
+        let srs: SRS<E> = SRS::setup(4, &mut rng);
+
+        let mut poly = GeneralDensePolynomial::from_coeff_vec(srs.powers_of_g.clone());
+
+        let subgroup  = LagrangeSubgroup::<Fr>::new(4);
+
+        let evals = poly.batch_evaluate_rou(&subgroup.domain);
+
+        let eval_w0 = poly.evaluate(&subgroup.domain.element(0));
+        let eval_w1 = poly.evaluate(&subgroup.domain.element(1));
+        let eval_w2 = poly.evaluate(&subgroup.domain.element(2));
+        let eval_w3 = poly.evaluate(&subgroup.domain.element(3));
+
+        assert_eq!(evals, vec![eval_w0, eval_w1, eval_w2, eval_w3]);
     }
 }

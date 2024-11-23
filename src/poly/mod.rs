@@ -1,1 +1,1 @@
-mod polynomial;
+pub mod polynomial;

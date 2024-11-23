@@ -19,6 +19,11 @@ impl<F: FftField> LagrangeSubgroup<F> {
         }
     }
 
+    /// it returns L_0(tau), L_1(tau), L_2(tau), ...
+    pub fn evaluate_all_basis(&self, tau: &F) -> Vec<F> {
+        self.domain.evaluate_all_lagrange_coefficients(*tau)
+    }
+
     pub fn get_coset(&self, f: F) -> LagrangeCoset<F> {
         LagrangeCoset {
             domain: self.domain.get_coset(f).unwrap(),
@@ -28,6 +33,7 @@ impl<F: FftField> LagrangeSubgroup<F> {
     pub fn size(&self) -> usize {
         self.domain.size()
     }
+
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, CanonicalSerialize)]
@@ -49,10 +55,40 @@ impl<F: FftField> LagrangeCoset<F> {
 mod tests {
     use crate::constant_curve::ScalarField;
     use crate::lagrange_basis::lagrange_basis::LagrangeSubgroup;
-    use ark_ff::Field;
-    use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
+    use ark_ff::{FftField, Field, One, Zero};
+    use ark_poly::{DenseUVPolynomial, EvaluationDomain, GeneralEvaluationDomain, Polynomial};
+    use ark_poly::univariate::DensePolynomial;
+    use ark_std::{test_rng, UniformRand};
 
     type F = ScalarField;
+
+    // Function to compute Lagrange basis polynomials L_i
+    fn compute_lagrange_basis<F: FftField>(roots: &GeneralEvaluationDomain<F>) -> Vec<DensePolynomial<F>> {
+        let mut lagrange_polys = Vec::new();
+
+        for i in 0..roots.size() {
+            // Initialize numerator and denominator
+            let mut numerator = DensePolynomial::from_coefficients_vec(vec![F::one()]);
+            let mut denominator = F::one();
+
+            for j in 0..roots.size() {
+                if i != j {
+                    // (x - w^j)
+                    let poly_x_minus_root = DensePolynomial::from_coefficients_vec(vec![-roots.element(j), F::one()]);
+                    numerator = &numerator * &poly_x_minus_root;
+
+                    // Denominator (w^i - w^j)
+                    denominator *= roots.element(i) - roots.element(j);
+                }
+            }
+
+            // L_i(x) = numerator / denominator
+            let li = numerator * denominator.inverse().unwrap();
+            lagrange_polys.push(li);
+        }
+
+        lagrange_polys
+    }
 
     #[test]
     fn lagrange_test() {
@@ -85,5 +121,42 @@ mod tests {
         for i in 0..8usize {
             assert_eq!(subgroup_8.domain.element(i), subgroup_16.domain.element(2 * i));
         }
+    }
+
+    #[test]
+    fn test_lagrange_basis() {
+        let mut rng = test_rng();
+
+        let subgroup_16 = LagrangeSubgroup {
+            domain: GeneralEvaluationDomain::<F>::new(16).unwrap()
+        };
+
+        let lagrange_polynomials = compute_lagrange_basis::<F>(&subgroup_16.domain);
+
+        // Verify the Lagrange properties: L_i(w^j)
+        for i in 0..subgroup_16.size() {
+            for j in 0..subgroup_16.size() {
+                let result = lagrange_polynomials[i].evaluate(&subgroup_16.domain.element(j));
+                if i == j {
+                    assert_eq!(result, F::one(), "L_{}(w^{}) should be 1", i, j);
+                } else {
+                    assert_eq!(result, F::zero(), "L_{}(w^{}) should be 0", i, j);
+                }
+            }
+        }
+
+        let tau = F::rand(&mut rng);
+
+        // verify that evaluate_all_basis works well
+        assert_eq!(
+            subgroup_16.evaluate_all_basis(&tau),
+            {
+                let mut res = Vec::new();
+                for poly in lagrange_polynomials {
+                    res.push(poly.evaluate(&tau));
+                }
+                res
+            }
+        )
     }
 }
