@@ -24,31 +24,10 @@ impl<F: FftField> LagrangeSubgroup<F> {
         self.domain.evaluate_all_lagrange_coefficients(*tau)
     }
 
-    pub fn get_coset(&self, f: F) -> LagrangeCoset<F> {
-        LagrangeCoset {
-            domain: self.domain.get_coset(f).unwrap(),
-        }
-    }
-
     pub fn size(&self) -> usize {
         self.domain.size()
     }
 
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, CanonicalSerialize)]
-pub struct LagrangeCoset<F: FftField> {
-    pub domain: GeneralEvaluationDomain<F>,
-}
-
-impl<F: FftField> LagrangeCoset<F> {
-    pub fn size(&self) -> usize {
-        self.domain.size()
-    }
-
-    pub fn get_offset(&self) -> F {
-        self.domain.coset_offset()
-    }
 }
 
 #[cfg(test)]
@@ -92,33 +71,22 @@ mod tests {
 
     #[test]
     fn lagrange_test() {
-        let subgroup_16 = LagrangeSubgroup {
-            domain: GeneralEvaluationDomain::<F>::new(16).unwrap()
-        };
-
+        let subgroup_16: LagrangeSubgroup<F> = LagrangeSubgroup::new(16);
         assert_eq!(subgroup_16.domain.size(), 16);
-        let w_0 = subgroup_16.domain.element(0);
-        let w_1 = subgroup_16.domain.element(1);
-        let w_2 = subgroup_16.domain.element(2);
-        let w_3 = subgroup_16.domain.element(3);
-        let w_19 = subgroup_16.domain.element(19);
 
-        assert_eq!(w_0, F::ONE);
-        assert_eq!(w_1 * w_1, w_2);
-        assert_eq!(w_2 * w_1, w_3);
-        assert_eq!(w_3, w_19);
+        // Check subgroup elements
+        let elements: Vec<_> = (0..4).map(|i| subgroup_16.domain.element(i)).collect();
+        assert_eq!(elements[0], F::ONE);
+        assert_eq!(elements[1] * elements[1], elements[2]);
+        assert_eq!(elements[2] * elements[1], elements[3]);
+        assert_eq!(elements[3], subgroup_16.domain.element(19));
 
-        // every subgroup coset_offset is one
+        // Verify coset offset
         assert_eq!(subgroup_16.domain.coset_offset(), F::ONE);
 
-        let coset = subgroup_16.get_coset(F::ONE);
-        assert_eq!(coset.domain, subgroup_16.domain);
-
-        let subgroup_8 = LagrangeSubgroup {
-            domain: GeneralEvaluationDomain::<F>::new(8).unwrap()
-        };
-
-        for i in 0..8usize {
+        // Verify subgroup_8 elements within subgroup_16
+        let subgroup_8: LagrangeSubgroup<F> = LagrangeSubgroup::new(8);
+        for i in 0..8 {
             assert_eq!(subgroup_8.domain.element(i), subgroup_16.domain.element(2 * i));
         }
     }
@@ -127,21 +95,25 @@ mod tests {
     fn test_lagrange_basis() {
         let mut rng = test_rng();
 
+        let tau = F::rand(&mut rng);
         let subgroup_16 = LagrangeSubgroup {
-            domain: GeneralEvaluationDomain::<F>::new(16).unwrap()
+            domain: GeneralEvaluationDomain::<F>::new(16).unwrap().get_coset(tau).unwrap(),
         };
+
+        let subgroup_16 =LagrangeSubgroup {
+            domain: subgroup_16.domain.get_coset(F::ONE).unwrap(),
+        };
+        // a subgroup should have an offset of one
+        assert_eq!(subgroup_16.domain.coset_offset(), F::ONE);
 
         let lagrange_polynomials = compute_lagrange_basis::<F>(&subgroup_16.domain);
 
         // Verify the Lagrange properties: L_i(w^j)
-        for i in 0..subgroup_16.size() {
-            for j in 0..subgroup_16.size() {
-                let result = lagrange_polynomials[i].evaluate(&subgroup_16.domain.element(j));
-                if i == j {
-                    assert_eq!(result, F::one(), "L_{}(w^{}) should be 1", i, j);
-                } else {
-                    assert_eq!(result, F::zero(), "L_{}(w^{}) should be 0", i, j);
-                }
+        for (i, poly) in lagrange_polynomials.iter().enumerate() {
+            for (j, element) in subgroup_16.domain.elements().enumerate() {
+                let result = poly.evaluate(&element);
+                let expected = if i == j { F::one() } else { F::zero() };
+                assert_eq!(result, expected, "L_{}(w^{}) should be {}", i, j, expected);
             }
         }
 
@@ -150,13 +122,7 @@ mod tests {
         // verify that evaluate_all_basis works well
         assert_eq!(
             subgroup_16.evaluate_all_basis(&tau),
-            {
-                let mut res = Vec::new();
-                for poly in lagrange_polynomials {
-                    res.push(poly.evaluate(&tau));
-                }
-                res
-            }
-        )
+            lagrange_polynomials.iter().map(|poly| poly.evaluate(&tau)).collect::<Vec<_>>()
+        );
     }
 }
