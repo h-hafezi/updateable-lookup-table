@@ -239,7 +239,6 @@ pub(crate) mod tests {
     use ark_std::test_rng;
     use ark_std::rand::Rng;
     use crate::kzg::SRS;
-    use crate::lagrange_basis::lagrange_basis::LagrangeSubgroup;
 
     type Fr = ScalarField;
 
@@ -360,14 +359,14 @@ pub(crate) mod tests {
 
         let mut poly = GeneralDensePolynomial::from_coeff_vec(srs.powers_of_g.clone());
 
-        let subgroup  = LagrangeSubgroup::<Fr>::new(4);
+        let subgroup: GeneralEvaluationDomain<Fr> = GeneralEvaluationDomain::new(4).unwrap();
 
-        let evals = poly.batch_evaluate_rou(&subgroup.domain);
+        let evals = poly.batch_evaluate_rou(&subgroup);
 
-        let eval_w0 = poly.evaluate(&subgroup.domain.element(0));
-        let eval_w1 = poly.evaluate(&subgroup.domain.element(1));
-        let eval_w2 = poly.evaluate(&subgroup.domain.element(2));
-        let eval_w3 = poly.evaluate(&subgroup.domain.element(3));
+        let eval_w0 = poly.evaluate(&subgroup.element(0));
+        let eval_w1 = poly.evaluate(&subgroup.element(1));
+        let eval_w2 = poly.evaluate(&subgroup.element(2));
+        let eval_w3 = poly.evaluate(&subgroup.element(3));
 
         assert_eq!(evals, vec![eval_w0, eval_w1, eval_w2, eval_w3]);
     }
