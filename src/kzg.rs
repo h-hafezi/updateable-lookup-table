@@ -1,4 +1,3 @@
-use crate::lagrange_basis::lagrange_basis::LagrangeSubgroup;
 use crate::poly::polynomial::GeneralDensePolynomial;
 use ark_ec::pairing::Pairing;
 use ark_ec::{AffineRepr, CurveGroup, VariableBaseMSM};
@@ -6,7 +5,7 @@ use ark_ff::{FftField, Field};
 use ark_std::rand::RngCore as Rng;
 use ark_std::UniformRand;
 use std::ops::Mul;
-use ark_poly::EvaluationDomain;
+use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SRS<E: Pairing> {
@@ -83,7 +82,7 @@ impl<E: Pairing> SRS<E> {
 
     /// Given a set of roots of unity, this function computes all KZG commitments to the Lagrange basis
     /// The code is optimised such that does FFT for a subgroup instead of coset directly
-    pub fn compute_kzg_commitments_to_lagrange_basis<F>(&self, subgroup: &LagrangeSubgroup<F>) -> Vec<E::G1>
+    pub fn compute_kzg_commitments_to_lagrange_basis<F>(&self, subgroup: &GeneralEvaluationDomain<F>) -> Vec<E::G1>
     where
         F: FftField,
         E: Pairing<ScalarField = F>,
@@ -96,7 +95,7 @@ impl<E: Pairing> SRS<E> {
 
         // Normalization factor and coset factor
         let normalization_factor = F::from(subgroup.size() as u64).inverse().unwrap();
-        let coset_factor = subgroup.domain.coset_offset(); // Coset offset (z)
+        let coset_factor = subgroup.coset_offset(); // Coset offset (z)
 
         // Adjust coefficients based on normalization and coset scaling
         let adjusted_coeffs: Vec<_> = self
@@ -108,7 +107,7 @@ impl<E: Pairing> SRS<E> {
 
         // Evaluate the polynomial on the coset
         let mut poly = GeneralDensePolynomial::from_coeff_vec(adjusted_coeffs);
-        let p_evals = poly.batch_evaluate_rou(&subgroup.domain.get_coset(F::ONE).unwrap());
+        let p_evals = poly.batch_evaluate_rou(&subgroup.get_coset(F::ONE).unwrap());
 
         let n = p_evals.len();
         (0..n).map(|i| p_evals[(n - i) % n].clone()).collect()
@@ -120,7 +119,6 @@ impl<E: Pairing> SRS<E> {
 mod test {
     use crate::constant_curve::{G1Affine, G1Projective, ScalarField, E};
     use crate::kzg::{SRS};
-    use crate::lagrange_basis::lagrange_basis::LagrangeSubgroup;
     use ark_ec::{AffineRepr, CurveGroup};
     use ark_std::{test_rng, UniformRand};
     use std::ops::Mul;
@@ -143,16 +141,14 @@ mod test {
         }
 
         // generate a subgroup of size n
-        let subgroup = LagrangeSubgroup {
-            domain: GeneralEvaluationDomain::<F>::new(n).unwrap().get_coset(F::rand(&mut rng)).unwrap(),
-        };
+        let coset = GeneralEvaluationDomain::<F>::new(n).unwrap().get_coset(F::rand(&mut rng)).unwrap();
 
         // compute vec![g ^ L_0(tau), g ^ L_1(tau), ...] through FFT
-        let kzg_commitments_to_lagrange_basis: Vec<G1Projective> = srs.compute_kzg_commitments_to_lagrange_basis(&subgroup);
+        let kzg_commitments_to_lagrange_basis: Vec<G1Projective> = srs.compute_kzg_commitments_to_lagrange_basis(&coset);
 
         // compute L_i(tau) by directly compute L_i(tau) and scalar multiplication
         let expected_kzg_commitment_to_lagrange_basis: Vec<G1Projective> = {
-            let evals = subgroup.evaluate_all_basis(&tau);
+            let evals = coset.evaluate_all_lagrange_coefficients(tau);
             let mut res = Vec::new();
             for (i, l_i_tau) in evals.iter().enumerate() {
                 res.push(G1Affine::generator().mul(l_i_tau));

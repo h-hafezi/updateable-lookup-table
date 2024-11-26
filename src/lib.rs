@@ -7,3 +7,4 @@ pub mod util;
 pub mod poly;
 
 pub mod kzg;
+mod tree;
