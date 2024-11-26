@@ -27,8 +27,44 @@ impl<F: FftField> LagrangeSubgroup<F> {
     pub fn size(&self) -> usize {
         self.domain.size()
     }
-
 }
+
+impl<F: FftField> LagrangeSubgroup<F> {
+    /// Splits the Lagrange subgroup into k subgroups of size `n`.
+    pub fn split(&self, split_factor: usize) -> Vec<LagrangeSubgroup<F>> {
+        // 1. Check that the domain is indeed a subgroup (not a coset)
+        assert_eq!(self.domain.coset_offset(), F::ONE, "Domain is a coset, not a subgroup.");
+
+        // 2. Ensure `n` is a positive power of two
+        is_positive_power_of_two(split_factor);
+
+        // 3. If n == 1, return the current subgroup
+        if split_factor == 1 {
+            return vec![self.clone()];
+        }
+
+        // 4. Calculate the number of cosets
+        let n = self.size() / split_factor;
+        assert_eq!(self.size() % split_factor, 0, "Size of subgroup must be divisible by n.");
+
+        let mut subgroups = Vec::with_capacity(split_factor);
+
+        // First subgroup (H) is of size `n`
+        let first_subgroup_domain = GeneralEvaluationDomain::<F>::new(n).unwrap();
+        subgroups.push(LagrangeSubgroup { domain: first_subgroup_domain });
+
+        // Generate remaining subgroups as cosets of the first subgroup
+        let generator = self.domain.element(1); // ω, the primitive root
+        for i in 1..split_factor {
+            let offset = generator.pow([i as u64]); // ω^i as offset
+            let coset_domain = first_subgroup_domain.get_coset(offset).unwrap();
+            subgroups.push(LagrangeSubgroup { domain: coset_domain });
+        }
+
+        subgroups
+    }
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -123,6 +159,32 @@ mod tests {
         assert_eq!(
             subgroup_16.evaluate_all_basis(&tau),
             lagrange_polynomials.iter().map(|poly| poly.evaluate(&tau)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_split_subgroup_offsets() {
+        // Generate a subgroup of size 1024
+        let subgroup: LagrangeSubgroup<F> = LagrangeSubgroup::new(1024);
+
+        // Split the subgroup into 16 subgroups of size 64
+        let subgroups = subgroup.split(16);
+
+        // Extract the first element (offset) from each split subgroup
+        let split_offsets: Vec<F> = subgroups.iter()
+            .map(|sg| sg.domain.coset_offset())  // The first element in each subgroup
+            .collect();
+
+        // Extract the first 16 elements of the original subgroup
+        let original_elements: Vec<F> = (0..16)
+            .map(|i| subgroup.domain.element(i))
+            .collect();
+
+        // Verify that the offsets match the expected elements
+        assert_eq!(
+            split_offsets,
+            original_elements,
+            "The split subgroup offsets do not match the expected elements from the original subgroup."
         );
     }
 }
