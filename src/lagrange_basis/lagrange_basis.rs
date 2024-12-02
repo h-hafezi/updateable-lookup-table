@@ -1,23 +1,19 @@
 use crate::util::is_positive_power_of_two;
 use ark_ff::FftField;
 use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
-use ark_serialize::CanonicalSerialize;
 
-pub fn split_subgroup<F: FftField>(domain : &GeneralEvaluationDomain<F>, split_factor: usize) -> Vec<GeneralEvaluationDomain<F>> {
-    // 1. Check that the domain is indeed a subgroup (not a coset)
+pub fn split_subgroup<F: FftField>(domain: &GeneralEvaluationDomain<F>, split_factor: usize) -> Vec<GeneralEvaluationDomain<F>> {
+    // Check that the domain is indeed a subgroup (not a coset) and split factor is valid
     assert_eq!(domain.coset_offset(), F::ONE, "Domain is a coset, not a subgroup.");
-
-    // 2. Ensure `n` is a positive power of two
     is_positive_power_of_two(split_factor);
 
-    // 3. If n == 1, return the current subgroup
+    // If n == 1, return the current subgroup
     if split_factor == 1 {
         return vec![domain.clone()];
     }
 
-    // 4. Calculate the number of cosets
+    // Calculate the number of cosets
     let n = domain.size() / split_factor;
-    assert_eq!(domain.size() % split_factor, 0, "Size of subgroup must be divisible by n.");
 
     let mut subgroups = Vec::with_capacity(split_factor);
 
@@ -36,78 +32,54 @@ pub fn split_subgroup<F: FftField>(domain : &GeneralEvaluationDomain<F>, split_f
     subgroups
 }
 
-fn print_subgroups<F: FftField>(domain: &GeneralEvaluationDomain<F>, subgroups: &[GeneralEvaluationDomain<F>], split_factor: usize) {
-    let generator_symbol = "ω"; // Symbolic representation for ω
-    let subgroup_size = domain.size();  // Original subgroup size
-    let coset_size = subgroup_size / split_factor;
-
-    println!("Original subgroup elements:");
-    let original_elements: Vec<String> = (0..subgroup_size)
-        .map(|i| format!("{}^{}", generator_symbol, i))
-        .collect();
-    println!("{:?}", original_elements);
-
-    println!("\nSplit cosets:");
-    for (coset_index, coset) in subgroups.iter().enumerate() {
-        let offset_exponent = coset_index;
-
-        assert_eq!(coset.coset_offset(), domain.element(1).pow([offset_exponent as u64]));
-        let coset_elements: Vec<String> = (0..coset_size)
-            .map(|j| format!("{}^{}", generator_symbol, offset_exponent + j * split_factor))
-            .collect();
-        println!("Coset {} (offset: {}^{}) : {:?}", coset_index , generator_symbol, coset_index, coset_elements);
-    }
-}
-
 pub fn split_vector<T: Clone>(vector: &[T], split_factor: usize) -> Vec<Vec<T>> {
     let length = vector.len();
-    assert!(length.is_power_of_two(), "Vector length must be a power of two.");
-    assert!(split_factor > 0 && (length % split_factor) == 0, "Invalid split factor.");
+    assert!(
+        length.is_power_of_two() && split_factor > 0 && (length % split_factor) == 0,
+        "Invalid split factor or vector length"
+    );
 
-    let subgroup_size = length / split_factor; // Size of each split vector
-    let mut result = Vec::with_capacity(split_factor);
+    let subgroup_size = length / split_factor;
 
-    // Debug mode to print information
-    #[cfg(debug_assertions)]  // This ensures the block is only compiled in debug mode
-    {
-        println!("\nDebugging: Splitting the vector...");
-    }
-
-    for i in 0..split_factor {
-        let mut subvector = Vec::with_capacity(subgroup_size);
-        for j in 0..subgroup_size {
-            subvector.push(vector[i + j * split_factor].clone()); // Picking elements based on the pattern
-        }
-
-        result.push(subvector);
-
-        // Debug print the subgroup
-        #[cfg(debug_assertions)]  // Only print in debug mode
-        {
-            let subvector_elements: Vec<String> = (0..subgroup_size)
-                .map(|j| format!("g{}", i + j * split_factor))
-                .collect();
-            println!("Vector {}: {:?}", i, subvector_elements);
-        }
-    }
-
-    result
+    (0..split_factor)
+        .map(|i| (0..subgroup_size).map(|j| vector[i + j * split_factor].clone()).collect())
+        .collect()
 }
 
-
 #[cfg(test)]
-mod tests {
-    use crate::constant_curve::{ScalarField, E};
-    use ark_ec::pairing::Pairing;
-    use ark_ec::{AffineRepr, CurveGroup};
+pub mod tests {
+    use crate::constant_curve::ScalarField;
+    use crate::lagrange_basis::lagrange_basis::{split_subgroup, split_vector};
     use ark_ff::{FftField, Field, One, Zero};
     use ark_poly::univariate::DensePolynomial;
     use ark_poly::{DenseUVPolynomial, EvaluationDomain, GeneralEvaluationDomain, Polynomial};
     use ark_std::{test_rng, UniformRand};
-    use std::ops::Mul;
-    use crate::lagrange_basis::lagrange_basis::{print_subgroups, split_vector, split_subgroup};
+
 
     type F = ScalarField;
+
+    pub fn print_subgroups<F: FftField>(domain: &GeneralEvaluationDomain<F>, subgroups: &[GeneralEvaluationDomain<F>], split_factor: usize) {
+        let generator_symbol = "ω"; // Symbolic representation for ω
+        let subgroup_size = domain.size();  // Original subgroup size
+        let coset_size = subgroup_size / split_factor;
+
+        println!("Original subgroup elements:");
+        let original_elements: Vec<String> = (0..subgroup_size)
+            .map(|i| format!("{}^{}", generator_symbol, i))
+            .collect();
+        println!("{:?}", original_elements);
+
+        println!("\nSplit cosets:");
+        for (coset_index, coset) in subgroups.iter().enumerate() {
+            let offset_exponent = coset_index;
+
+            assert_eq!(coset.coset_offset(), domain.element(1).pow([offset_exponent as u64]));
+            let coset_elements: Vec<String> = (0..coset_size)
+                .map(|j| format!("{}^{}", generator_symbol, offset_exponent + j * split_factor))
+                .collect();
+            println!("Coset {} (offset: {}^{}) : {:?}", coset_index, generator_symbol, coset_index, coset_elements);
+        }
+    }
 
     // Function to compute Lagrange basis polynomials L_i
     fn compute_lagrange_basis<F: FftField>(roots: &GeneralEvaluationDomain<F>) -> Vec<DensePolynomial<F>> {
@@ -193,7 +165,7 @@ mod tests {
 
     #[test]
     fn test_split_subgroup_offsets() {
-        let (subgroup_size, split_factor) = (16usize, 1usize);
+        let (subgroup_size, split_factor) = (16usize, 2usize);
 
         // Generate a subgroup of size 1024
         let subgroup: GeneralEvaluationDomain<F> = GeneralEvaluationDomain::new(subgroup_size).unwrap();
@@ -203,7 +175,7 @@ mod tests {
 
         // Extract the first element (offset) from each split subgroup
         let split_offsets: Vec<F> = subgroups.iter()
-            .map(|sg| sg.coset_offset())  // The first element in each subgroup
+            .map(|sg| sg.coset_offset())
             .collect();
 
         // Extract the first 16 elements of the original subgroup
