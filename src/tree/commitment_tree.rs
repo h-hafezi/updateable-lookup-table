@@ -37,6 +37,8 @@ pub struct CommitmentTreeNode<F: FftField, E: Pairing<ScalarField=F>> {
     pub opening: Vec<F>,
     /// kzg commitment
     pub commitment: E::G1,
+    /// kzg generators which are in fact L_i(tau) commitments themselves
+    pub lagrange_commitments: Vec<E::G1>,
 }
 
 pub fn new_commitment_tree<F, E>(params: CommitmentTreeParams<F, E>) -> CommitmentTree<F, E>
@@ -62,6 +64,7 @@ where
             let commitment = E::G1::msm(&commitments_affine, scalar).unwrap();
             nodes.push(CommitmentTreeNode {
                 opening: scalar.clone(),
+                lagrange_commitments: srs_node.commitments.clone(),
                 commitment,
             });
         }
